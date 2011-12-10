@@ -1199,6 +1199,14 @@ int processCommand(redisClient *c) {
         return REDIS_OK;
     }
 
+    /* Check if command is authorized if command authoriztion is required */
+    if (server.requirepass && c->auth_cmdset && c->cmd->proc != authCommand) {
+        if (! setTypeIsMember(c->auth_cmdset, c->argv[0])) {
+            addReplyError(c,"operation not permitted");
+            return REDIS_OK;
+        }
+    }
+
     /* If cluster is enabled, redirect here */
     if (server.cluster_enabled &&
                 !(c->cmd->getkeys_proc == NULL && c->cmd->firstkey == 0)) {
@@ -1348,14 +1356,29 @@ int prepareForShutdown(int flags) {
 /*================================== Commands =============================== */
 
 void authCommand(redisClient *c) {
+    if (c->auth_cmdset) {
+        /* TODO: if c->auth_cmdset->refcount is 1, what to do ? */
+        c->auth_cmdset->refcount--;
+        c->auth_cmdset = NULL;
+    }
     if (!server.requirepass) {
         addReplyError(c,"Client sent AUTH, but no password is set");
     } else if (!strcmp(c->argv[1]->ptr, server.requirepass)) {
-      c->authenticated = 1;
-      addReply(c,shared.ok);
+        c->authenticated = 1;
+        addReply(c,shared.ok);
     } else {
-      c->authenticated = 0;
-      addReplyError(c,"invalid password");
+        robj *o = lookupKeyRead(c->db, c->argv[1]);
+        if (o) {
+            if (o->type == REDIS_SET) {
+                c->auth_cmdset = o;
+                c->auth_cmdset->refcount++;
+                c->authenticated = 1;
+                addReply(c,shared.ok);
+            }
+        } else {
+            c->authenticated = 0;
+            addReplyError(c,"invalid password");
+        }
     }
 }
 

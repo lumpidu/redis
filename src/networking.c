@@ -56,6 +56,7 @@ redisClient *createClient(int fd) {
     listSetFreeMethod(c->io_keys,decrRefCount);
     c->pubsub_channels = dictCreate(&setDictType,NULL);
     c->pubsub_patterns = listCreate();
+    c->auth_cmdset = NULL;
     listSetFreeMethod(c->pubsub_patterns,decrRefCount);
     listSetMatchMethod(c->pubsub_patterns,listMatchObjects);
     if (fd != -1) listAddNodeTail(server.clients,c);
